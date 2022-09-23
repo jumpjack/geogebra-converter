@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Geogebra analyzer</title>
+  <script src="xmltojson.js"></script>
+  <!-- https://github.com/javadev/xml-to-json -->
+</head>
+<body>
+	<script>
+// 0.1.0 - First public version
+	var myName;
+	var fileContentsUInt8;
+
+	function loadFile(fileHandler) {
+		// The file is read as ArrayBuffer to keep contents raw, without interpretations from Javascript engine
+		// The raw array can then be converted to array of bytes (8 bit) (signed or unsigned) or of integers (16 bit).
+		// If interpreted as a string of characters, the raw array will be automatically converted by javascript using UTF16 encoder.
+		// If you need UTF-8 encoding, you must	use TextDecoder("utf8").
+		// Supported encodings: https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API/Encodings
+
+		console.log("File to open:" ,fileHandler);
+		myName = fileHandler.name;
+		const reader = new FileReader();
+		reader.addEventListener('load', (event) => {
+				rawFileContents = event.target.result;
+				console.log("Loaded: ", event, rawFileContents.length);
+				fileContentsUInt8 = new Uint8Array(rawFileContents); // Extract from the generic ArrayBuffer an array of Unsigned Integers (0..255)
+				console.log(fileContentsUInt8);
+				document.getElementById("status").innerHTML = "File loaded. Click to save:";
+		});
+		reader.readAsArrayBuffer(fileHandler); // Read as arrayBuffer as "readAsBinaryString" is deprecated but we don't want Javascript to interpret the file at its own wish...
+		console.log("Reading process initiated...");
+	}
+
+
+	function saveFile(fileContent, filename) {
+		myBlob = new Blob([fileContent]/*, {type: "application/octet-stream"}*/);
+		var url = window.URL.createObjectURL(myBlob);
+		var anchor = document.createElement("a");
+		anchor.href = url;
+		anchor.download = filename;
+		anchor.click();
+		window.URL.revokeObjectURL(url);
+	}
+
+	function processFile() {
+  	UTF16string = String.fromCharCode(...fileContentsUInt8); // Interpret byte array as a string of UTF16 characters, i.e. each 0xVV value is considered as 0x00VV value.
+    XMLraw = UTF16string.split('\"').join('\'');
+    XMLraw = UTF16string.split("'").join('"');
+    objXML = xmlToJson(XMLraw)
+    objJSON = JSON.parse(objXML);
+    console.log(objJSON.geogebra.construction.element)
+
+  geoElements = [];
+ 	mapped = objJSON.geogebra.construction.element.map(function(obj) {
+  //console.log(obj);
+      outputString = "";
+      formulaRaw = obj["#item"];
+      if (formulaRaw !== undefined) {
+        //console.log("ITEM");
+        names = formulaRaw.command.output;
+        namesArray =  Object.keys(names).map((key) => [key, names[key]]);      
+        outputsCount = namesArray.length;
+        name = "";
+        for (var j=0; j < namesArray.length-2; j++) {
+          name = namesArray[j][1];
+          arguments = formulaRaw.command.input;
+          argumentsArray = Object.keys(arguments).map((key) => [key, arguments[key]]);   
+          functionName = formulaRaw.command["-name"];   
+          outputString = name + " = " + formulaRaw.command["-name"] + "(";
+          paramsString = "";
+          paramObj = [];
+          for (var i = 0; i < argumentsArray.length-2; i++) {
+            paramsString += argumentsArray[i][1] + ", "  ;
+            paramObj.push(argumentsArray[i][1]);         
+            outputString += argumentsArray[i][1] + ", "  ;
+          }
+          paramsString += argumentsArray[i][1];
+          paramObj.push(argumentsArray[i][1]);         
+          outputString += argumentsArray[i][1] + ")";
+          lastFormula  = formulaRaw
+          lastArguments  = formulaRaw.command.input
+          lastArr = argumentsArray;
+          console.log(outputString,obj)
+          geoElements[name]= { formulaStr: functionName + "(" + paramsString + ")" ,
+                            functionName: functionName,
+                            parameters : paramObj};
+        };
+        name = namesArray[j][1];
+        arguments = formulaRaw.command.input;
+        argumentsArray = Object.keys(arguments).map((key) => [key, arguments[key]]);   
+        functionName = formulaRaw.command["-name"];      
+        outputString = name + " = " + formulaRaw.command["-name"] + "(";
+        paramsString = "";
+        paramObj = [];
+        for (var i = 0; i < argumentsArray.length-2; i++) {
+          paramsString += argumentsArray[i][1] + ", "  ;
+          paramObj.push(argumentsArray[i][1]);
+          outputString += argumentsArray[i][1] + ", "  ;
+        }
+        paramsString += argumentsArray[i][1];
+        paramObj.push(argumentsArray[i][1]);         
+        outputString += argumentsArray[i][1] + ")";
+        lastFormula  = formulaRaw
+        lastArguments  = formulaRaw.command.input
+        lastArr = argumentsArray;
+        console.log(outputString,obj)
+        geoElements[name]= { formulaStr: functionName + "(" + paramsString + ")" ,
+                            functionName: functionName,
+                            parameters : paramObj};
+      } else {
+        //console.log("non-item");        
+        //console.log("    " + obj["-label"] + ": " + obj["-type"] );
+        itemName =  obj["-label"];
+        itemType = obj["-type"];
+        if (itemType == "numeric") {
+          sldMin = obj.slider["-min"];
+          sldMax = obj.slider["-max"];
+          outputString =  itemName + " = Slider(" + sldMin + "," + sldMax + ")"; 
+          console.log(outputString)
+          geoElements[itemName] = { formulaStr : "Slider(" + sldMin + "," + sldMax + ")",
+                                    functionName : "Slider",
+                                    parameters : [sldMin, sldMax]}
+        } else {
+          //outputString = itemName + " = " + "mo vediamo...";
+          //console.log("non-numeric:",obj)
+        }
+        
+      }
+      //console.log("=================");
+		});
+
+	}
+
+
+	</script>
+Load and Save text file locally.<br>
+<br>
+	<input type="file" id="inpFile" width="100"><br>
+	Status: <span id="status" name="status">-</span>
+	<button id="btnSave" name="btnSave" onclick="saveFile(rawFileContents, myName)")>Save...</button><br>
+	<button id="btnProcess" name="btnProcess" onclick="processFile()">Process file</button><br>
+	<br>
+	See console for output.
+
+</body>
+<script>
+		const fileSelector = document.getElementById('inpFile');
+		fileSelector.addEventListener('change', (event) => loadFile(event.target.files[0]));
+		console.log("Ready.");
+		document.getElementById("status").innerHTML = "READY.";
+</script>
+</html>
