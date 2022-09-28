@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
 	<title>Geogebra analyzer</title>
   <script src="xmltojson.js"></script>
   <!-- https://github.com/javadev/xml-to-json -->
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.6/beautify.js"></script>
 </head>
 <body>
 	<script>
+// 0.2.0 - Added output in GUI  
 // 0.1.0 - First public version
 	var myName;
 	var fileContentsUInt8;
@@ -18,18 +22,16 @@
 		// If you need UTF-8 encoding, you must	use TextDecoder("utf8").
 		// Supported encodings: https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API/Encodings
 
-		console.log("File to open:" ,fileHandler);
+		//console.log("File to open:" ,fileHandler);
 		myName = fileHandler.name;
 		const reader = new FileReader();
 		reader.addEventListener('load', (event) => {
 				rawFileContents = event.target.result;
-				console.log("Loaded: ", event, rawFileContents.length);
+				//console.log("Loaded: ", event, rawFileContents.length);
 				fileContentsUInt8 = new Uint8Array(rawFileContents); // Extract from the generic ArrayBuffer an array of Unsigned Integers (0..255)
-				console.log(fileContentsUInt8);
 				document.getElementById("status").innerHTML = "File loaded. Click to save:";
 		});
 		reader.readAsArrayBuffer(fileHandler); // Read as arrayBuffer as "readAsBinaryString" is deprecated but we don't want Javascript to interpret the file at its own wish...
-		console.log("Reading process initiated...");
 	}
 
 
@@ -49,20 +51,19 @@
     XMLraw = UTF16string.split("'").join('"');
     objXML = xmlToJson(XMLraw)
     objJSON = JSON.parse(objXML);
-    console.log(objJSON.geogebra.construction.element)
-
+console.log("-----------------------------------------");
   geoElements = [];
  	mapped = objJSON.geogebra.construction.element.map(function(obj) {
   //console.log(obj);
       outputString = "";
       formulaRaw = obj["#item"];
-      if (formulaRaw !== undefined) {
-        //console.log("ITEM");
+      if (formulaRaw !== undefined) { // ITEM with formula
+        itemType = formulaRaw.command["-name"];
         names = formulaRaw.command.output;
         namesArray =  Object.keys(names).map((key) => [key, names[key]]);      
         outputsCount = namesArray.length;
         name = "";
-        for (var j=0; j < namesArray.length-2; j++) {
+        for (var j=0; j < namesArray.length-2; j++) { // last element must be ignored
           name = namesArray[j][1];
           arguments = formulaRaw.command.input;
           argumentsArray = Object.keys(arguments).map((key) => [key, arguments[key]]);   
@@ -84,8 +85,12 @@
           console.log(outputString,obj)
           geoElements[name]= { formulaStr: functionName + "(" + paramsString + ")" ,
                             functionName: functionName,
-                            parameters : paramObj};
+                            parameters : paramObj,
+                            raw : obj,
+                            elementName: name
+                            };
         };
+        
         name = namesArray[j][1];
         arguments = formulaRaw.command.input;
         argumentsArray = Object.keys(arguments).map((key) => [key, arguments[key]]);   
@@ -101,47 +106,154 @@
         paramsString += argumentsArray[i][1];
         paramObj.push(argumentsArray[i][1]);         
         outputString += argumentsArray[i][1] + ")";
+        
+        
         lastFormula  = formulaRaw
         lastArguments  = formulaRaw.command.input
         lastArr = argumentsArray;
-        console.log(outputString,obj)
+        
+        if (itemType != "Point") {
+          storedString = "";
+          metaDataString =  "Objtype: ITEM, Element type: '" + itemType + "'" 
+          console.log(outputString + ", Objtype: ITEM, Element type: '" + itemType + "'", obj);
+         } else {
+          storedString = outputString;
+          metaDataString =  "Objtype: ITEM, Element type: '" + itemType + "'" 
+         }        
+        //console.log(outputString)
         geoElements[name]= { formulaStr: functionName + "(" + paramsString + ")" ,
                             functionName: functionName,
-                            parameters : paramObj};
-      } else {
-        //console.log("non-item");        
-        //console.log("    " + obj["-label"] + ": " + obj["-type"] );
+                            parameters : paramObj,
+                            raw : obj,
+                            elementName: name
+                            };
+        console.log("=================");
+        return;
+      } else { // non-ITEM: numerical results
         itemName =  obj["-label"];
         itemType = obj["-type"];
-        if (itemType == "numeric") {
+        
+        if (itemType == "numeric") { // Slider
           sldMin = obj.slider["-min"];
           sldMax = obj.slider["-max"];
           outputString =  itemName + " = Slider(" + sldMin + "," + sldMax + ")"; 
-          console.log(outputString)
+          //console.log("Found NON-item named '" + obj["-label"] + "' of type '" + obj["-type"] + "'", obj);        
+          console.log(outputString + ", Objtype: NON item, Element type: '" + itemType + "'" , obj);        
+          //console.log(outputString)
           geoElements[itemName] = { formulaStr : "Slider(" + sldMin + "," + sldMax + ")",
                                     functionName : "Slider",
-                                    parameters : [sldMin, sldMax]}
-        } else {
-          //outputString = itemName + " = " + "mo vediamo...";
-          //console.log("non-numeric:",obj)
+                                    parameters : [sldMin, sldMax],
+                                    raw : obj,
+                                    elementName: itemName
+                                    }
+          console.log("=================");
+          return;
         }
         
+        if (itemType == "point3d") {
+          outputString = storedString + " (" +  obj.coords["-x"] + ", " + obj.coords["-y"] + ", " + obj.coords["-z"] + ", " + obj.coords["-w"] + ")";
+          console.log(outputString + ", Objtype: NON item, non numeric, Element type: '" + itemType + "'", obj);   
+          console.log("=================");
+          return;     
+        }
+        
+        if (itemType == "point") {
+          outputString = storedString + " (" +  obj.coords["-x"] + ", " + obj.coords["-y"] + ", " + obj.coords["-z"] + ")";
+          console.log(outputString + ", Objtype: NON item, non numeric, Element type: '" + itemType + "'", obj);   
+          console.log("=================");
+          return;     
+        }
+        
+        //console.log("TYPE '" + obj["-type"] + "' NOT IMPLEMENTED", obj);        
+        //console.log("=================");
+
       }
-      //console.log("=================");
 		});
 
+    finalArray = Object.keys(geoElements).map((key) => [key, geoElements[key]]);   
+      
+    replaced = true;
+    deb = 0;
+    fixedElements = "";
+    while ((replaced == true) && (deb <= 1000)) {
+      deb++;
+console.log("Giro " + deb);      
+      replaced = false;
+      elemIndex = 0;
+      finalArray.forEach( (element) => {
+          //fixedString = element[1].formulaStr;
+console.log("Element '" + element[0] + "':", element[1].formulaStr, JSON.stringify( element[1].parameters));
+          for (var paramIndex = 0; paramIndex < element[1].parameters.length; paramIndex++) {
+            param = element[1].parameters[paramIndex];
+            if (geoElements[param]) {
+console.log("     Param '" + param + "' is defined: ", geoElements[param].formulaStr);
+              element[1].parameters[paramIndex] = geoElements[param];
+              element[1].formulaStr = element[1].formulaStr.replace(param,geoElements[param].formulaStr);
+              replaced = true;
+console.log("      ", deb, " - Replaced", elemIndex);
+            } else {
+              //replaced = false;
+            }
+          };
+          //fixedElements += fixedString + "\n";
+          elemIndex++;
+      });
+    }
+    console.log("Result: ", finalArray);
+    finalArray2 = [];
+   finalArray.forEach( (element) => {
+     original = element[1].formulaStr;
+     temp = original;
+     temp = temp.split("(").join("{");
+     temp = temp.split(")").join("}");
+     indented = js_beautify(temp);
+     fixed = indented.split("{").join("(");
+     fixed = fixed.split("}").join(")");
+     finalArray2.push({indented: fixed, original: original, elementName: element[1].elementName});
+   });
+
+    console.log("Result 2: ", finalArray2[70]);
+
+    listbox = document.createElement("select");
+    listbox.setAttribute("onchange","update()");
+    for (elemInd = 0; elemInd < finalArray.length; elemInd++) {
+      listElem = document.createElement("option");
+      elemName = finalArray2[elemInd].elementName;
+      elemOriginal = finalArray2[elemInd].original;   
+      elemIndented = finalArray2[elemInd].indented;   
+      listElem.innerHTML = elemName;
+      listbox.appendChild(listElem);
+    }
+    elems.appendChild(listbox);
+    /*finalArray[3][1].formulaStr , elementName
+    finalArray2[3].elementName, original,indented*/
 	}
 
-
-	</script>
-Load and Save text file locally.<br>
+  function update() {
+  console.log(listbox,listbox.selectedIndex);
+    output1.value = finalArray2[listbox.selectedIndex].original;
+    output2.value = finalArray2[listbox.selectedIndex].indented;
+  }
+</script>
+<b><center><big><big><big><big>Geogebra analyzer</big></big></big></b><br>
+v.0.2.0<br></center>
+<br>
+<br>
+<br>
+Please select a geogebra.xml file (contained in .GGB file, which is actually a .ZIP archive)<br>
 <br>
 	<input type="file" id="inpFile" width="100"><br>
 	Status: <span id="status" name="status">-</span>
 	<button id="btnSave" name="btnSave" onclick="saveFile(rawFileContents, myName)")>Save...</button><br>
 	<button id="btnProcess" name="btnProcess" onclick="processFile()">Process file</button><br>
+  Select element: <span id="elems" name="elems"></span><br>
+  Output 1:<br>
+  <textarea id="output1" namer="output1" cols = 80 rows= 2></textarea><br>
+  <br>
+  Output 2:<br>
+  <textarea id="output2" namer="output2" cols = 80 rows= 20></textarea><br>
 	<br>
-	See console for output.
+	See also console for output.
 
 </body>
 <script>
